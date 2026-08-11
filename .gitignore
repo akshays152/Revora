@@ -1,0 +1,28 @@
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+.npm-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+
+# Environment and local data
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
