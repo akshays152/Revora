@@ -60,3 +60,28 @@ export interface RadioAnalysisResult {
   };
 }
 
+export interface RiskAssessmentResult {
+  risk_score: number;
+  risk_level: RiskLevel;
+  trend: "STABLE" | "RISING" | "FALLING";
+  components: {
+    driver_stress_risk: number;
+    intent_urgency_risk: number;
+    pace_degradation_risk: number;
+  };
+  reasons: string[];
+}
+
+export interface IntelligenceResult {
+  summary: string;
+  recommendation: {
+    action: string;
+    recommended_compound: string;
+    urgency: "LOW" | "MEDIUM" | "HIGH" | "IMMEDIATE";
+    pit_window_open: boolean;
+    estimated_time_loss_sec: number;
+  };
+  reasons: string[];
+  alerts: AlertItem[];
+  radio_advisory: string;
+}
