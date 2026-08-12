@@ -44,7 +44,7 @@ export function RadioPanel({ lap, onAnalysis }: RadioPanelProps) {
     setStatus("analyzing");
     setError("");
     try {
-      const result = await analyzeRadio(file);
+      const result = await analyzeRadio(file, lap);
       onAnalysis(result);
       setStatus("done");
     } catch (caught) {

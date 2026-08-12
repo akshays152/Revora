@@ -25,14 +25,18 @@ function App() {
   const [liveAnalysis, setLiveAnalysis] = useState<RadioAnalysisResult | null>(null);
   const [riskResult, setRiskResult] = useState<RiskAssessmentResult | null>(null);
   const [intelligenceResult, setIntelligenceResult] = useState<IntelligenceResult | null>(null);
+  const [liveAnalysisLap, setLiveAnalysisLap] = useState<number | null>(null);
   const handleRadioAnalysis = async (analysis: RadioAnalysisResult) => {
+    const analysisLap = demoLaps[selectedIndex].lap;
+
     setLiveAnalysis(analysis);
+    setLiveAnalysisLap(analysisLap);
 
     const telemetry = {
-      lap_number: demoLaps[selectedIndex].lap,
+      lap_number: analysisLap,
       lap_time_seconds: demoLaps[selectedIndex].lapTimeSeconds,
       baseline_lap_time_seconds:
-        demoLaps[selectedIndex].lapTimeSeconds - demoLaps[selectedIndex].lapDelta,
+      demoLaps[selectedIndex].lapTimeSeconds - demoLaps[selectedIndex].lapDelta,
       lap_delta: demoLaps[selectedIndex].lapDelta,
       sector_deltas: [0, 0, 0],
       tire_stint_age: 18,
@@ -48,10 +52,12 @@ function App() {
     };
 
     try {
-      const [risk, intelligence] = await Promise.all([
-        evaluateRisk(request),
-        analyzeIntelligence(request),
-      ]);
+      const risk = await evaluateRisk(request);
+
+      const intelligence = await analyzeIntelligence({
+        ...request,
+        risk_assessment: risk,
+      });
 
       setRiskResult(risk);
       setIntelligenceResult(intelligence);
@@ -60,10 +66,12 @@ function App() {
     }
   };
 
+  const hasLiveResultForSelectedLap =
+  liveAnalysis !== null && liveAnalysisLap === demoLaps[selectedIndex].lap;
+  
   const selectedLap = useMemo<LapSnapshot>(() => {
     const lap = demoLaps[selectedIndex];
-    if (!liveAnalysis) return lap;
-
+    if (!liveAnalysis || liveAnalysisLap !== lap.lap) return lap;
     const primaryIntent = liveAnalysis.intents[0];
 
     return {
@@ -154,14 +162,14 @@ function App() {
           />
           <InsightPanel
             lap={selectedLap}
-            intelligence={intelligenceResult}
+            intelligence={hasLiveResultForSelectedLap ? intelligenceResult : null}
           />
         </div>
 
         <div className="section-grid detail-row">
           <LapDetailPanel lap={selectedLap} />
           <AlertPanel
-            alerts={intelligenceResult?.alerts ?? []}
+            alerts={hasLiveResultForSelectedLap ? intelligenceResult?.alerts ?? [] : []}
             onSelectLap={handleSelectLap}
             selectedLap={selectedLap.lap}
           />

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.ai.huggingface_pipeline import (
@@ -9,6 +9,7 @@ from app.ai.huggingface_pipeline import (
     PipelineInferenceError,
 )
 from app.schemas.analysis import ModelStatusResponse, RadioAnalysisResponse
+
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 audio_pipeline = HuggingFaceAudioPipeline()
@@ -27,8 +28,15 @@ async def model_status() -> ModelStatusResponse:
 
 
 @router.post("/radio", response_model=RadioAnalysisResponse)
-async def analyze_radio(audio: UploadFile = File(...)) -> RadioAnalysisResponse:
+async def analyze_radio(
+    audio: UploadFile = File(...),
+    session_id: str = Form(...),
+    event_id: str = Form(...),
+    lap_number: int = Form(...),
+    timestamp: str = Form(...),
+) -> RadioAnalysisResponse:
     suffix = Path(audio.filename or "radio.wav").suffix.lower()
+
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(
             status_code=415,
@@ -37,14 +45,37 @@ async def analyze_radio(audio: UploadFile = File(...)) -> RadioAnalysisResponse:
 
     payload = await audio.read(MAX_AUDIO_BYTES + 1)
     await audio.close()
+
     if not payload:
-        raise HTTPException(status_code=400, detail="The uploaded audio file is empty.")
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded audio file is empty.",
+        )
+
     if len(payload) > MAX_AUDIO_BYTES:
-        raise HTTPException(status_code=413, detail="Audio clips must be 15 MB or smaller.")
+        raise HTTPException(
+            status_code=413,
+            detail="Audio clips must be 15 MB or smaller.",
+        )
 
     try:
-        return await run_in_threadpool(audio_pipeline.analyze, payload, suffix)
+        result = await run_in_threadpool(
+            audio_pipeline.analyze,
+            payload,
+            suffix,
+        )
+
+        return result.model_copy(
+            update={
+                "session_id": session_id,
+                "event_id": event_id,
+                "lap_number": lap_number,
+                "timestamp": timestamp,
+            }
+        )
+
     except PipelineConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     except PipelineInferenceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

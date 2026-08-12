@@ -1,4 +1,5 @@
 import type {
+  LapSnapshot,
   RadioAnalysisResult,
   RiskAssessmentResult,
   IntelligenceResult,
@@ -6,9 +7,16 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
-export async function analyzeRadio(file: File): Promise<RadioAnalysisResult> {
+export async function analyzeRadio(
+  file: File,
+  lap: LapSnapshot,
+): Promise<RadioAnalysisResult> {
   const body = new FormData();
   body.append("audio", file);
+  body.append("session_id", "revora-demo-session-001");
+  body.append("event_id", "apex-grand-prix-suzuka");
+  body.append("lap_number", String(lap.lap));
+  body.append("timestamp", lap.timestamp);
 
   const response = await fetch(`${API_BASE_URL}/analysis/radio`, {
     method: "POST",

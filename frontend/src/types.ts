@@ -38,6 +38,10 @@ export interface AlertItem {
 }
 
 export interface RadioAnalysisResult {
+  session_id: string;
+  event_id: string;
+  lap_number: number;
+  timestamp: string; 
   transcript: string;
   driver_state: {
     label: DriverState;
