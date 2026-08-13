@@ -10,8 +10,10 @@ Represents the analysis of one driver radio message.
 
 ```ts
 type RadioAnalysis = {
-  id: string;
-  lap: number;
+  session_id: string;
+  lap_id: string;
+  radio_event_id: string;
+  lap_number: number;
   timestamp: string;
   audio_url?: string;
   transcript: string;
@@ -26,7 +28,7 @@ type RadioAnalysis = {
 
 ### Implemented transport
 
-`POST /api/analysis/radio` accepts multipart form data with an `audio` file (WAV, MP3, FLAC, M4A, OGG, or WebM; maximum 15 MB). It returns the conceptual fields above plus `audio_emotions` and `models` provenance. The current endpoint represents one clip, so `trend` is `STABLE`; the temporal module will calculate cross-message trends later.
+`POST /api/analysis/orchestrate` is the product endpoint. It accepts multipart audio, event identifiers, and explicit telemetry fields and returns radio analysis, risk assessment, and racing intelligence together. A rolling five-event session window calculates rising/falling trends. `POST /api/analysis/radio` remains a lower-level debugging endpoint.
 
 The prototype stress score is a transparent heuristic over real acoustic features (RMS energy, zero-crossing rate, and spectral centroid) with a small transcript-language adjustment. Whisper remains the required Hugging Face speech-to-text component. An optional Hugging Face emotion model can replace the acoustic feature layer when explicitly enabled. This is an observable decision-support signal, not a diagnosis or a scientifically calibrated stress measurement.
 
@@ -79,7 +81,7 @@ type LapPerformance = {
 };
 ```
 
-`lap_delta_seconds` should use a documented comparison baseline, such as the driver's recent representative pace. Positive deltas conventionally indicate slower performance.
+When live timing is supplied, `lap_delta_seconds` is derived as `lap_time_seconds - baseline_lap_time_seconds`. A caller-provided delta is audit-only and the response flags a correction when it disagrees. If timing is absent, telemetry is `UNAVAILABLE` and the delta remains empty. Pace contributes to risk only when `telemetry_source` is explicitly `LIVE`.
 
 ## RiskAssessment
 

@@ -34,7 +34,7 @@ export async function analyzeRadio(
     throw new Error(message);
   }
 
-  return response.json() as Promise<RadioAnalysisResult>;
+  return response.json() as Promise<OrchestrationResult>;
 }
 export async function evaluateRisk(
   request: unknown,

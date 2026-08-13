@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from math import ceil
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable
@@ -12,6 +14,7 @@ from app.schemas.analysis import (
     DriverStateLabel,
     DriverStateResult,
     ModelMetadata,
+    ModelLifecycleState,
     RadioAnalysisResponse,
     RacingIntentLabel,
     RacingIntentResult,
@@ -24,6 +27,13 @@ class PipelineConfigurationError(RuntimeError):
 
 class PipelineInferenceError(RuntimeError):
     """Raised when a model cannot analyze an uploaded audio clip."""
+
+
+@dataclass(frozen=True)
+class IntentRule:
+    label: RacingIntentLabel
+    terms: tuple[str, ...]
+    base_confidence: float
 
 
 class HuggingFaceAudioPipeline:
@@ -52,14 +62,14 @@ class HuggingFaceAudioPipeline:
         "neutral": 0.08,
     }
 
-    INTENT_RULES: list[tuple[RacingIntentLabel, tuple[str, ...]]] = [
-        (RacingIntentLabel.URGENT_REQUEST, ("box this lap", "box now", "urgent", "immediately", "stop the car")),
-        (RacingIntentLabel.STRATEGY_FRUSTRATION, ("why are we", "strategy", "too late", "should have", "still on")),
-        (RacingIntentLabel.TYRE_COMPLAINT, ("tyre", "tire", "fronts are gone", "rears are gone")),
-        (RacingIntentLabel.GRIP_ISSUE, ("grip", "sliding", "traction", "no rear", "no front")),
-        (RacingIntentLabel.HANDLING_CONCERN, ("understeer", "oversteer", "balance", "can't control", "cannot control", "moving around")),
-        (RacingIntentLabel.PERFORMANCE_DIFFICULTY, ("losing time", "slow", "pace", "struggling", "difficult")),
-    ]
+    INTENT_RULES: tuple[IntentRule, ...] = (
+        IntentRule(RacingIntentLabel.URGENT_REQUEST, ("box this lap", "box now", "urgent", "immediately", "stop the car"), 0.82),
+        IntentRule(RacingIntentLabel.STRATEGY_FRUSTRATION, ("why are we", "strategy", "too late", "should have", "still on"), 0.66),
+        IntentRule(RacingIntentLabel.TYRE_COMPLAINT, ("tyre", "tire", "fronts are gone", "rears are gone"), 0.70),
+        IntentRule(RacingIntentLabel.GRIP_ISSUE, ("grip", "sliding", "traction", "no rear", "no front"), 0.72),
+        IntentRule(RacingIntentLabel.HANDLING_CONCERN, ("understeer", "oversteer", "balance", "can't control", "cannot control", "moving around"), 0.72),
+        IntentRule(RacingIntentLabel.PERFORMANCE_DIFFICULTY, ("losing time", "slow", "pace", "struggling", "difficult"), 0.64),
+    )
 
     TEXT_STRESS_TERMS = (
         "gone",
@@ -73,13 +83,14 @@ class HuggingFaceAudioPipeline:
         "box this lap",
         "stop the car",
     )
+    CLASSIFIER_VERSION = "revora-racing-language-rules-v2"
 
     def __init__(
         self,
         asr_pipeline: Callable[[Any], Any] | None = None,
         emotion_pipeline: Callable[[Any], Any] | None = None,
     ) -> None:
-        self.asr_model = os.getenv("HF_ASR_MODEL", "openai/whisper-tiny.en")
+        self.asr_model = os.getenv("HF_ASR_MODEL", "openai/whisper-base.en")
         self.audio_model = os.getenv("HF_AUDIO_MODEL", "superb/wav2vec2-base-superb-er")
         self.use_audio_model = (
             emotion_pipeline is not None or os.getenv("HF_ENABLE_AUDIO_MODEL", "0") == "1"
@@ -87,6 +98,8 @@ class HuggingFaceAudioPipeline:
         self._asr = asr_pipeline
         self._emotion = emotion_pipeline
         self._load_lock = Lock()
+        self.state = ModelLifecycleState.READY if self.loaded else ModelLifecycleState.UNAVAILABLE
+        self.state_detail: str | None = None
 
     @property
     def loaded(self) -> bool:
@@ -106,7 +119,17 @@ class HuggingFaceAudioPipeline:
         with self._load_lock:
             if self.loaded:
                 return
+            self.state = ModelLifecycleState.LOADING
+            self.state_detail = None
             try:
+                download_timeout = self._positive_timeout(
+                    "HF_MODEL_DOWNLOAD_TIMEOUT_SECONDS", 120.0
+                )
+                # huggingface_hub applies these values to metadata and file HTTP
+                # requests. They must be set before importing the Hub module.
+                hub_timeout = self._hub_timeout_value(download_timeout)
+                os.environ["HF_HUB_ETAG_TIMEOUT"] = hub_timeout
+                os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = hub_timeout
                 from huggingface_hub import snapshot_download
                 from transformers import pipeline
 
@@ -115,35 +138,74 @@ class HuggingFaceAudioPipeline:
                 common: dict[str, Any] = {"device": device}
                 if token:
                     common["token"] = token
-                asr_model_ref = self.asr_model
-                try:
-                    asr_model_ref = snapshot_download(
-                        repo_id=self.asr_model,
-                        local_files_only=True,
-                    )
-                except Exception:
-                    # No complete cached snapshot yet: pipeline performs the
-                    # normal first-run Hub download using the public model ID.
-                    pass
+                asr_model_ref = self._resolve_snapshot(
+                    snapshot_download, self.asr_model, token
+                )
                 self._asr = pipeline(
                     "automatic-speech-recognition",
                     model=asr_model_ref,
                     **common,
                 )
                 if self.use_audio_model and self._emotion is None:
+                    audio_model_ref = self._resolve_snapshot(
+                        snapshot_download, self.audio_model, token
+                    )
                     self._emotion = pipeline(
                         "audio-classification",
-                        model=self.audio_model,
+                        model=audio_model_ref,
                         **common,
                     )
+                self.state = ModelLifecycleState.READY
             except Exception as exc:  # dependency/model errors need a clear API response
+                self.state = ModelLifecycleState.FAILED
+                timeout = os.getenv("HF_MODEL_DOWNLOAD_TIMEOUT_SECONDS", "120")
+                self.state_detail = (
+                    "Speech model initialization failed. Check model access, free disk "
+                    f"space, and network connectivity; download request timeout is {timeout}s."
+                )
                 raise PipelineConfigurationError(
                     "Could not load the Hugging Face speech model. Install backend "
-                    "requirements, ensure Hugging Face is reachable, and optionally set "
-                    "HF_TOKEN for your account."
+                    "requirements, ensure Hugging Face is reachable, optionally set HF_TOKEN, "
+                    "and adjust HF_MODEL_DOWNLOAD_TIMEOUT_SECONDS for slow networks."
                 ) from exc
 
-    def analyze(self, audio: bytes, suffix: str = ".wav") -> RadioAnalysisResponse:
+    @staticmethod
+    def _positive_timeout(name: str, default: float) -> float:
+        raw = os.getenv(name, str(default))
+        try:
+            value = float(raw)
+        except ValueError as exc:
+            raise PipelineConfigurationError(f"{name} must be a number greater than zero.") from exc
+        if value <= 0:
+            raise PipelineConfigurationError(f"{name} must be greater than zero.")
+        return value
+
+    @staticmethod
+    def _hub_timeout_value(timeout: float) -> str:
+        """Return the positive integer string required by huggingface_hub."""
+        return str(max(1, ceil(timeout)))
+
+    @staticmethod
+    def _resolve_snapshot(snapshot_download: Callable[..., str], model_id: str, token: str | None) -> str:
+        options: dict[str, Any] = {"repo_id": model_id}
+        if token:
+            options["token"] = token
+        try:
+            return snapshot_download(local_files_only=True, **options)
+        except Exception:
+            return snapshot_download(local_files_only=False, **options)
+
+    def analyze(
+        self,
+        audio: bytes,
+        suffix: str = ".wav",
+        *,
+        session_id: str,
+        lap_id: str,
+        radio_event_id: str,
+        lap_number: int,
+        timestamp: str,
+    ) -> RadioAnalysisResponse:
         self._ensure_loaded()
         assert self._asr is not None
 
@@ -184,9 +246,18 @@ class HuggingFaceAudioPipeline:
         intents = self._detect_intents(transcript)
 
         return RadioAnalysisResponse(
+            session_id=session_id,
+            lap_id=lap_id,
+            radio_event_id=radio_event_id,
+            lap_number=lap_number,
+            timestamp=timestamp,
             transcript=transcript,
             driver_state=DriverStateResult(
-                label=self._state_for_score(combined_stress),
+                label=(
+                    self._state_for_score(combined_stress)
+                    if confidence >= 0.70
+                    else DriverStateLabel.UNCERTAIN
+                ),
                 stress_score=combined_stress,
                 confidence=round(confidence, 4),
             ),
@@ -197,6 +268,7 @@ class HuggingFaceAudioPipeline:
             models=ModelMetadata(
                 speech_to_text=self.asr_model,
                 vocal_state=self.vocal_state_name,
+                classifier_version=self.CLASSIFIER_VERSION,
             ),
         )
 
@@ -290,11 +362,19 @@ class HuggingFaceAudioPipeline:
     def _detect_intents(cls, transcript: str) -> list[RacingIntentResult]:
         lowered = transcript.lower()
         results: list[RacingIntentResult] = []
-        for label, terms in cls.INTENT_RULES:
-            evidence = next((term for term in terms if term in lowered), None)
-            if evidence:
+        for rule in cls.INTENT_RULES:
+            matches = [term for term in rule.terms if term in lowered]
+            if matches:
+                evidence = max(matches, key=len)
+                corroboration = min(0.12, (len(matches) - 1) * 0.06)
+                phrase_specificity = 0.04 if " " in evidence else 0.0
+                confidence = min(0.95, rule.base_confidence + corroboration + phrase_specificity)
                 results.append(
-                    RacingIntentResult(label=label, confidence=0.9, evidence=evidence)
+                    RacingIntentResult(
+                        label=rule.label,
+                        confidence=round(confidence, 2),
+                        evidence=evidence,
+                    )
                 )
         return results
 

@@ -131,13 +131,24 @@ Open `http://localhost:5173`.
 
 ```bat
 set HF_TOKEN=your_hugging_face_token
-set HF_ASR_MODEL=openai/whisper-tiny.en
+set HF_ASR_MODEL=openai/whisper-base.en
 set HF_AUDIO_MODEL=superb/wav2vec2-base-superb-er
 set HF_ENABLE_AUDIO_MODEL=1
 set HF_DEVICE=-1
+set HF_INFERENCE_TIMEOUT_SECONDS=120
+set HF_MODEL_DOWNLOAD_TIMEOUT_SECONDS=120
 ```
 
 `HF_ENABLE_AUDIO_MODEL=0` is the tested default. It uses Whisper plus local acoustic features. Setting it to `1` also enables the configured Hugging Face audio-classification model and increases model-loading time and resource usage.
+
+Model downloads and inference have separate timeouts. Hugging Face metadata and
+file requests use `HF_MODEL_DOWNLOAD_TIMEOUT_SECONDS`; analysis requests use
+`HF_INFERENCE_TIMEOUT_SECONDS`. Invalid or expired settings produce actionable
+503/504 responses, and the model lifecycle endpoint exposes initialization failures.
+
+Racing-language intent detection uses the documented, deterministic
+[`revora-racing-language-rules-v2`](docs/racing-language-ruleset.md) ruleset.
+Its confidence is a traceable rule-strength score, not a claimed statistical probability.
 
 ## Verify the implementation
 
@@ -198,9 +209,9 @@ Revora/
 
 ## Roadmap
 
-- Store radio events across a complete race session.
+- Persist radio-event history beyond the current in-memory session window.
 - Learn a per-driver vocal baseline instead of relying only on generic thresholds.
-- Fuse real telemetry and lap-time data with radio signals.
+- Connect an authenticated live timing provider to replace manual live-telemetry entry.
 - Detect mismatches between calm wording and a stressed vocal delivery.
 - Calibrate alerts against labelled motorsport-radio data.
 - Add explainable trend views for engineers and strategists.

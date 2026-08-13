@@ -18,6 +18,23 @@ export function RadioPanel({ lap, liveAnalysis, onAnalysis }: RadioPanelProps) {
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [audioProgress, setAudioProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [lapNumber, setLapNumber] = useState(nextLapNumber);
+  const [includeTelemetry, setIncludeTelemetry] = useState(false);
+  const [lapTime, setLapTime] = useState("");
+  const [baseline, setBaseline] = useState("");
+  const [stintAge, setStintAge] = useState("");
+  const [compound, setCompound] = useState("");
+
+  useEffect(() => setLapNumber(nextLapNumber), [nextLapNumber]);
+
+  useEffect(() => {
+    setFile(null);
+    setAudioUrl((current) => { if (current) URL.revokeObjectURL(current); return null; });
+    setStatus("idle");
+    setError("");
+    setIsPlaying(false);
+    setAudioProgress(0);
+  }, [resetSignal]);
 
   useEffect(() => () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -32,6 +49,7 @@ export function RadioPanel({ lap, liveAnalysis, onAnalysis }: RadioPanelProps) {
     setIsPlaying(false);
     setDurationSeconds(0);
     setAudioProgress(0);
+    onFileSelected(Boolean(nextFile));
   };
 
   const handlePlay = async () => {

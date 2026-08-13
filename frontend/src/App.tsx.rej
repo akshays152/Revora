@@ -1,0 +1,109 @@
+diff a/frontend/src/App.tsx b/frontend/src/App.tsx	(rejected hunks)
+@@ -10,65 +10,57 @@ import { RadioPanel } from "./components/RadioPanel";
+ import { RiskPanel } from "./components/RiskPanel";
+ import { StateTimeline } from "./components/StateTimeline";
+ import { TopBar } from "./components/TopBar";
+-import { alerts, demoLaps } from "./mock-data";
+-import type { LapSnapshot, RadioAnalysisResult } from "./types";
++import { demoAlerts, demoLaps } from "./demo-data";
++import { transitionExperienceMode } from "./experience-mode";
++import { toSnapshot } from "./result-mapping";
++import type { ExperienceMode, LapSnapshot, OrchestrationResult } from "./types";
+ 
+ function App() {
+-  const [selectedIndex, setSelectedIndex] = useState(demoLaps.length - 1);
+-  const [isDemoRunning, setIsDemoRunning] = useState(false);
+-  const [liveAnalysis, setLiveAnalysis] = useState<RadioAnalysisResult | null>(null);
+-  const selectedLap = useMemo<LapSnapshot>(() => {
+-    const lap = demoLaps[selectedIndex];
+-    if (!liveAnalysis) return lap;
+-    const primaryIntent = liveAnalysis.intents[0];
+-    return {
+-      ...lap,
+-      state: liveAnalysis.driver_state.label,
+-      stress: liveAnalysis.driver_state.stress_score,
+-      confidence: Math.round(liveAnalysis.confidence * 100),
+-      trend: liveAnalysis.driver_state.trend,
+-      transcript: liveAnalysis.transcript,
+-      intent: primaryIntent?.label ?? "PERFORMANCE_DIFFICULTY",
+-      intentLabel: primaryIntent?.label.replace(/_/g, " ") ?? "NO RACING CONCERN",
+-      reasons: [
+-        `Vocal stress signal ${liveAnalysis.vocal_stress_score}%`,
+-        primaryIntent
+-          ? `Racing language matched “${primaryIntent.evidence}”`
+-          : "No racing-specific concern detected",
+-      ],
+-    };
+-  }, [liveAnalysis, selectedIndex]);
++  const [sessionId] = useState(() => `session-${crypto.randomUUID()}`);
++  const [mode, setMode] = useState<ExperienceMode>("DEMO");
++  const [demoRunning, setDemoRunning] = useState(true);
++  const [demoIndex, setDemoIndex] = useState(0);
++  const [results, setResults] = useState<OrchestrationResult[]>([]);
++  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
++  const [inputResetSignal, setInputResetSignal] = useState(0);
+ 
+   useEffect(() => {
+-    if (!isDemoRunning) return;
+-    const timer = window.setInterval(() => {
+-      setSelectedIndex((current) => current >= demoLaps.length - 1 ? 0 : current + 1);
+-    }, 1800);
++    if (mode !== "DEMO" || !demoRunning) return;
++    const timer = window.setInterval(() => setDemoIndex((current) => (current + 1) % demoLaps.length), 1800);
+     return () => window.clearInterval(timer);
+-  }, [isDemoRunning]);
++  }, [mode, demoRunning]);
+ 
+-  const timelineLaps = useMemo(() => demoLaps.slice(-5), []);
++  const selectedResult = results.find((item) => item.radio_analysis.radio_event_id === selectedEventId) ?? results[results.length - 1] ?? null;
++  const liveSnapshots = useMemo(() => results.map(toSnapshot), [results]);
++  const isDemo = mode === "DEMO";
++  const activeLap = isDemo ? demoLaps[demoIndex] : selectedResult ? toSnapshot(selectedResult) : demoLaps[demoIndex];
++  const activeLaps = isDemo ? demoLaps : liveSnapshots;
++  const isLiveResult = mode === "LIVE_RESULT" && selectedResult !== null;
+ 
++  const handleAnalysis = (result: OrchestrationResult) => {
++    setResults((current) => [...current, result]);
++    setSelectedEventId(result.radio_analysis.radio_event_id);
++    setMode((current) => transitionExperienceMode(current, "ANALYSIS_SUCCEEDED"));
++  };
+   const handleSelectLap = (lap: number) => {
+-    const index = demoLaps.findIndex((item) => item.lap === lap);
+-    if (index >= 0) {
+-      setSelectedIndex(index);
+-      setLiveAnalysis(null);
+-    }
++    if (isDemo) { const index = demoLaps.findIndex((item) => item.lap === lap); if (index >= 0) setDemoIndex(index); return; }
++    const result = [...results].reverse().find((item) => item.radio_analysis.lap_number === lap);
++    if (result) setSelectedEventId(result.radio_analysis.radio_event_id);
+   };
++  const returnToDemo = () => { setMode((current) => transitionExperienceMode(current, "RETURN_TO_DEMO")); setDemoRunning(true); setInputResetSignal((value) => value + 1); };
+ 
+-  return (
+-    <div className="app-shell min-h-screen">
+-      <TopBar isDemoRunning={isDemoRunning} currentLap={selectedLap.lap} />
+-      <main className="dashboard-shell">
+-        <div className="dashboard-intro"><div><div className="eyebrow intro-eyebrow">RACE CONTROL / DRIVER INTELLIGENCE</div><h1>The silent co-driver.</h1><p>Reading the driver before the numbers tell the story.</p></div><div className="intro-meta"><span>SESSION HEALTH</span><strong><i className="status-dot cyan" /> NOMINAL</strong></div></div>
+-        <div className="section-grid top-panels"><DriverStatePanel lap={selectedLap} /><PerformancePanel lap={selectedLap} /><RiskPanel lap={selectedLap} /></div>
+-        <div className="section-grid radio-timeline"><RadioPanel lap={selectedLap} onAnalysis={setLiveAnalysis} /><StateTimeline laps={timelineLaps} selectedLap={selectedLap.lap} onSelectLap={handleSelectLap} /></div>
+-        <div className="section-grid analysis-row"><PerformanceChart laps={demoLaps} selectedLap={selectedLap.lap} /><InsightPanel lap={selectedLap} /></div>
+-        <div className="section-grid detail-row"><LapDetailPanel lap={selectedLap} /><AlertPanel alerts={alerts} onSelectLap={handleSelectLap} selectedLap={selectedLap.lap} /></div>
+-      </main>
+-      <DemoController isRunning={isDemoRunning} currentLap={selectedLap.lap} firstLap={demoLaps[0].lap} lastLap={demoLaps[demoLaps.length - 1].lap} onToggle={() => { setLiveAnalysis(null); setIsDemoRunning((current) => !current); }} onRestart={() => { setLiveAnalysis(null); setSelectedIndex(0); setIsDemoRunning(true); }} />
+-    </div>
+-  );
++  return <div className={`app-shell min-h-screen mode-${mode.toLowerCase()}`}>
++    <TopBar mode={mode} currentLap={activeLap.lap} eventCount={results.length} />
++    <main className="dashboard-shell">
++      <div className="dashboard-intro"><div><div className="eyebrow intro-eyebrow">{isDemo ? "DEMO RACE CONTROL" : "LIVE DRIVER INTELLIGENCE"}</div><h1>The silent co-driver.</h1><p>{isDemo ? "Simulated presentation mode · select an audio clip to pause and enter live mode." : "Live mode · demo playback is paused and cannot affect these results."}</p></div><div className="intro-meta"><span>DATA MODE</span><strong><i className="status-dot cyan" /> {mode.replace(/_/g, " ")}</strong></div></div>
++      <div className="section-grid radio-timeline"><RadioPanel sessionId={sessionId} nextLapNumber={(liveSnapshots[liveSnapshots.length - 1]?.lap ?? activeLap.lap) + 1} liveAnalysis={isLiveResult ? selectedResult?.radio_analysis ?? null : null} demoLap={activeLap} showDemoContent={isDemo} resetSignal={inputResetSignal} onFileSelected={(hasFile) => { if (hasFile) { setDemoRunning(false); setMode((current) => transitionExperienceMode(current, "AUDIO_SELECTED")); } else if (mode === "LIVE_INPUT_READY") returnToDemo(); }} onAnalysisStart={() => setMode((current) => transitionExperienceMode(current, "ANALYSIS_STARTED"))} onAnalysisError={() => setMode((current) => transitionExperienceMode(current, "ANALYSIS_FAILED"))} onAnalysis={handleAnalysis} /><StateTimeline laps={(activeLaps.length ? activeLaps : [activeLap]).slice(-5)} selectedLap={activeLap.lap} onSelectLap={handleSelectLap} /></div>
++      <div className={`mode-bound-content ${mode === "LIVE_INPUT_READY" || mode === "ANALYZING" ? "is-demo-suspended" : ""}`}>
++        <div className="section-grid top-panels"><DriverStatePanel lap={activeLap} /><PerformancePanel lap={activeLap} telemetrySource={isDemo ? "DEMO" : selectedResult?.telemetry.telemetry_source ?? "UNAVAILABLE"} /><RiskPanel lap={activeLap} assessment={isLiveResult ? selectedResult?.risk_assessment : null} /></div>
++        <div className="section-grid analysis-row"><PerformanceChart laps={(activeLaps.length ? activeLaps : [activeLap])} selectedLap={activeLap.lap} telemetrySource={isDemo ? "DEMO" : selectedResult?.telemetry.telemetry_source ?? "UNAVAILABLE"} /><InsightPanel lap={activeLap} intelligence={isLiveResult ? selectedResult?.racing_intelligence ?? null : null} /></div>
++        <div className="section-grid detail-row"><LapDetailPanel lap={activeLap} /><AlertPanel alerts={isDemo ? demoAlerts : isLiveResult ? selectedResult?.racing_intelligence.alerts ?? [] : []} onSelectLap={handleSelectLap} selectedLap={activeLap.lap} /></div>
++      </div>
++    </main>
++    <DemoController mode={mode} isRunning={demoRunning} currentLap={demoLaps[demoIndex].lap} firstLap={demoLaps[0].lap} lastLap={demoLaps[demoLaps.length - 1].lap} onToggle={() => setDemoRunning((current) => !current)} onRestart={() => { setDemoIndex(0); setDemoRunning(true); }} onReturnToDemo={returnToDemo} />
++  </div>;
+ }
+ export default App;

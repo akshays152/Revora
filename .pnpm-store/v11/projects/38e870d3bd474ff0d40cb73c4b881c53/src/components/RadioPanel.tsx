@@ -1,0 +1,226 @@
+import { useEffect, useRef, useState } from "react";
+import { analyzeRaceEvent } from "../api";
+import type { LapSnapshot, LiveEventInput, OrchestrationResult, RadioAnalysisResult } from "../types";
+import { Icon } from "./Icon";
+
+type RadioPanelProps = {
+  sessionId: string;
+  nextLapNumber: number;
+  liveAnalysis: RadioAnalysisResult | null;
+  demoLap: LapSnapshot | null;
+  showDemoContent: boolean;
+  onFileSelected: (hasFile: boolean) => void;
+  onAnalysisStart: () => void;
+  onAnalysisError: () => void;
+  resetSignal: number;
+  onAnalysis: (analysis: OrchestrationResult) => void;
+};
+
+export function RadioPanel({ sessionId, nextLapNumber, liveAnalysis, demoLap, showDemoContent, onFileSelected, onAnalysisStart, onAnalysisError, resetSignal, onAnalysis }: RadioPanelProps) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "analyzing" | "done" | "error">("idle");
+  const [error, setError] = useState("");
+  const [durationSeconds, setDurationSeconds] = useState(0);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [lapNumber, setLapNumber] = useState(nextLapNumber);
+  const [includeTelemetry, setIncludeTelemetry] = useState(false);
+  const [lapTime, setLapTime] = useState("");
+  const [baseline, setBaseline] = useState("");
+  const [stintAge, setStintAge] = useState("");
+  const [compound, setCompound] = useState("");
+
+  useEffect(() => setLapNumber(nextLapNumber), [nextLapNumber]);
+
+  useEffect(() => {
+    setFile(null);
+    setAudioUrl((current) => { if (current) URL.revokeObjectURL(current); return null; });
+    setStatus("idle");
+    setError("");
+    setIsPlaying(false);
+    setAudioProgress(0);
+  }, [resetSignal]);
+
+  useEffect(() => () => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  }, [audioUrl]);
+
+  const handleFile = (nextFile: File | null) => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setFile(nextFile);
+    setAudioUrl(nextFile ? URL.createObjectURL(nextFile) : null);
+    setStatus("idle");
+    setError("");
+    setIsPlaying(false);
+    setDurationSeconds(0);
+    setAudioProgress(0);
+    onFileSelected(Boolean(nextFile));
+  };
+
+  const handlePlay = async () => {
+    if (!audioRef.current) return;
+    if (audioRef.current.paused) await audioRef.current.play();
+    else audioRef.current.pause();
+  };
+
+  const handleAnalyze = async () => {
+    if (!file) return;
+    setStatus("analyzing");
+    setError("");
+    onAnalysisStart();
+    try {
+      const event: LiveEventInput = { sessionId, lapNumber };
+      if (includeTelemetry) {
+        event.lapTimeSeconds = Number(lapTime);
+        event.baselineLapTimeSeconds = Number(baseline);
+        event.tireStintAge = Number(stintAge);
+        event.tireCompound = compound.trim();
+      }
+      const result = await analyzeRaceEvent(file, event);
+      onAnalysis(result);
+      setStatus("done");
+    } catch (caught) {
+      setStatus("error");
+      onAnalysisError();
+      setError(caught instanceof Error ? caught.message : "Audio analysis failed.");
+    }
+  };
+
+  const liveIntent = liveAnalysis?.intents?.[0];
+
+  const displayedTranscript =
+    liveAnalysis?.transcript ?? (showDemoContent ? demoLap?.transcript : "") ?? "";
+
+  const displayedIntent =
+    liveIntent?.label?.replace(/_/g, " ") ?? (showDemoContent ? demoLap?.intentLabel : "NO LIVE INTENT YET") ?? "NO LIVE INTENT YET";
+  const telemetryComplete = !includeTelemetry || Boolean(lapTime && baseline && stintAge && compound.trim());
+
+  return (
+    <section className="panel radio-panel">
+      <div className="panel-heading">
+        <span className="eyebrow">04 / DRIVER RADIO</span>
+        <span className="status-text">
+          <span className="status-dot orange" /> CHANNEL 01
+        </span>
+      </div>
+
+      <div className="radio-upload-row">
+        <label className="audio-upload">
+          <input
+            type="file"
+            accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.webm"
+            onChange={(event) =>
+              handleFile(event.target.files?.[0] ?? null)
+            }
+          />
+          <span>{file ? file.name : "SELECT RADIO CLIP"}</span>
+        </label>
+
+        <button
+          className="analyze-button"
+          disabled={!file || !lapNumber || !telemetryComplete || status === "analyzing"}
+          onClick={handleAnalyze}
+        >
+          {status === "analyzing" ? "TRANSCRIBING & ANALYZING..." : "RUN LIVE ANALYSIS"}
+        </button>
+      </div>
+      <div className="radio-upload-row live-event-fields">
+        <label className="audio-upload">LAP<input type="number" min="1" value={lapNumber} onChange={(event) => setLapNumber(Number(event.target.value))} /></label>
+        <label className="audio-upload"><input type="checkbox" checked={includeTelemetry} onChange={(event) => setIncludeTelemetry(event.target.checked)} /> INCLUDE LIVE TELEMETRY</label>
+      </div>
+      {includeTelemetry && <div className="radio-upload-row live-telemetry-fields">
+        <label className="audio-upload">LAP TIME (S)<input type="number" step="0.001" min="1" value={lapTime} onChange={(event) => setLapTime(event.target.value)} required /></label>
+        <label className="audio-upload">BASELINE (S)<input type="number" step="0.001" min="1" value={baseline} onChange={(event) => setBaseline(event.target.value)} required /></label>
+        <label className="audio-upload">STINT AGE<input type="number" min="0" value={stintAge} onChange={(event) => setStintAge(event.target.value)} required /></label>
+        <label className="audio-upload">COMPOUND<input value={compound} onChange={(event) => setCompound(event.target.value)} placeholder="SOFT / MEDIUM / HARD" required /></label>
+      </div>}
+
+      <div className="radio-topline">
+        <div className="audio-time">
+          <span>{showDemoContent ? "DEMO RADIO EVENT" : "LIVE RADIO EVENT"}</span>
+          <strong>
+            {durationSeconds
+              ? `00:${Math.min(59, Math.round(durationSeconds))
+                  .toString()
+                  .padStart(2, "0")}`
+              : "00:00"}
+          </strong>
+        </div>
+
+        <div className={`waveform ${isPlaying ? "is-playing" : ""}`}>
+          {Array.from({ length: 26 }, (_, index) => (
+            <i
+              key={index}
+              style={{ height: `${10 + ((index * 17) % 26)}%` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {audioUrl && (
+        <audio
+          ref={audioRef}
+          src={audioUrl}
+          onLoadedMetadata={(event) =>
+            setDurationSeconds(event.currentTarget.duration)
+          }
+          onTimeUpdate={(event) =>
+            setAudioProgress(
+              event.currentTarget.duration
+                ? (event.currentTarget.currentTime /
+                    event.currentTarget.duration) *
+                    100
+                : 0,
+            )
+          }
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => {
+            setIsPlaying(false);
+            setAudioProgress(0);
+          }}
+        />
+      )}
+
+      <div className="audio-controls">
+        <button
+          className="play-button"
+          disabled={!audioUrl}
+          onClick={handlePlay}
+          aria-label={isPlaying ? "Pause radio" : "Play radio"}
+        >
+          <Icon name={isPlaying ? "pause" : "play"} size={16} />
+        </button>
+
+        <div className="audio-track">
+          <span style={{ width: `${audioProgress}%` }} />
+        </div>
+
+        <span className="audio-label">
+          {isPlaying ? "PLAYING" : audioUrl ? "READY" : "NO CLIP"}
+        </span>
+      </div>
+
+      {error && (
+        <div className="analysis-error" role="alert">
+          {error}
+        </div>
+      )}
+
+      {status === "done" && (
+        <div className="analysis-success">
+          LIVE RADIO ANALYSIS COMPLETE
+        </div>
+      )}
+
+      <blockquote>"{displayedTranscript || "Awaiting a live radio event."}"</blockquote>
+
+      <div className="intent-row">
+        <span className="panel-kicker">DETECTED RACING INTENT</span>
+        <span className="intent-chip">{displayedIntent}</span>
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,17 @@
+diff a/backend/app/schemas/analysis.py b/backend/app/schemas/analysis.py	(rejected hunks)
+@@ -41,9 +55,15 @@ class ModelMetadata(BaseModel):
+     speech_to_text: str
+     vocal_state: str
+     source: str = "Hugging Face Hub"
++    classifier_version: str = "revora-racing-language-rules-v2"
+ 
+ 
+ class RadioAnalysisResponse(BaseModel):
++    session_id: str
++    lap_id: str
++    radio_event_id: str
++    lap_number: int = Field(ge=1)
++    timestamp: str
+     transcript: str
+     driver_state: DriverStateResult
+     vocal_stress_score: int = Field(ge=0, le=100)

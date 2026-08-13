@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class DriverStateLabel(StrEnum):
+    UNCERTAIN = "UNCERTAIN"
     CALM = "CALM"
     FOCUSED = "FOCUSED"
     STRESSED = "STRESSED"
@@ -19,11 +20,24 @@ class RacingIntentLabel(StrEnum):
     STRATEGY_FRUSTRATION = "STRATEGY_FRUSTRATION"
 
 
+class TrendLabel(StrEnum):
+    STABLE = "STABLE"
+    RISING = "RISING"
+    FALLING = "FALLING"
+
+
+class ModelLifecycleState(StrEnum):
+    LOADING = "loading"
+    READY = "ready"
+    FAILED = "failed"
+    UNAVAILABLE = "unavailable"
+
+
 class DriverStateResult(BaseModel):
     label: DriverStateLabel
     stress_score: int = Field(ge=0, le=100)
     confidence: float = Field(ge=0, le=1)
-    trend: str = "STABLE"
+    trend: TrendLabel = TrendLabel.STABLE
 
 
 class RacingIntentResult(BaseModel):
@@ -58,6 +72,8 @@ class RadioAnalysisResponse(BaseModel):
 
 
 class ModelStatusResponse(BaseModel):
+    state: ModelLifecycleState
     loaded: bool
     speech_to_text: str
     vocal_state: str
+    detail: str | None = None

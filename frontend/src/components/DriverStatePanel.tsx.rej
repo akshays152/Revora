@@ -1,0 +1,10 @@
+diff a/frontend/src/components/DriverStatePanel.tsx b/frontend/src/components/DriverStatePanel.tsx	(rejected hunks)
+@@ -12,7 +12,7 @@ export function DriverStatePanel({ lap }: { lap: LapSnapshot }) {
+       </div>
+       <div className="stress-readout"><span>STRESS INDEX</span><strong>{lap.stress}%</strong></div>
+       <div className="meter"><span style={{ width: `${lap.stress}%` }} /></div>
+-      <div className="state-meta"><div><span>CONFIDENCE</span><strong>{lap.confidence}%</strong></div><div><span>3-LAP SHIFT</span><strong className="text-orange">+29%</strong></div></div>
++      <div className="state-meta"><div><span>CONFIDENCE</span><strong>{lap.confidence}%</strong></div><div><span>EVENT TREND</span><strong className="text-orange">{lap.trend}</strong></div></div>
+       <div className="signal-strip"><span>VOCAL BASELINE</span><span>LANGUAGE PATTERN</span><span>RACE CONTEXT</span></div>
+     </section>
+   );

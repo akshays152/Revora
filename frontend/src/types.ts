@@ -1,4 +1,4 @@
-export type DriverState = "CALM" | "FOCUSED" | "STRESSED" | "CRITICAL";
+export type DriverState = "UNCERTAIN" | "CALM" | "FOCUSED" | "STRESSED" | "CRITICAL";
 
 export type RacingIntent =
   | "TYRE_COMPLAINT"
@@ -9,14 +9,15 @@ export type RacingIntent =
   | "STRATEGY_FRUSTRATION";
 
 export type RiskLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+export type ExperienceMode = "DEMO" | "LIVE_INPUT_READY" | "ANALYZING" | "LIVE_RESULT";
 
 export interface LapSnapshot {
   lap: number;
   timestamp: string;
-  lapTime: string;
-  lapTimeSeconds: number;
-  lapDelta: number;
-  sectors: [string, string, string];
+  lapTime: string | null;
+  lapTimeSeconds: number | null;
+  lapDelta: number | null;
+  sectors: [string, string, string] | null;
   state: DriverState;
   stress: number;
   confidence: number;

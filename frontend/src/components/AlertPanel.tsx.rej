@@ -1,0 +1,10 @@
+diff a/frontend/src/components/AlertPanel.tsx b/frontend/src/components/AlertPanel.tsx	(rejected hunks)
+@@ -4,7 +4,7 @@ import { Icon } from "./Icon";
+ export function AlertPanel({ alerts, onSelectLap, selectedLap }: { alerts: AlertItem[]; onSelectLap: (lap: number) => void; selectedLap: number }) {
+   return (
+     <section className="panel alerts-panel">
+-      <div className="panel-heading"><span className="eyebrow">08 / ALERTS</span><span className="alert-count">03 ACTIVE</span></div>
++      <div className="panel-heading"><span className="eyebrow">08 / ALERTS</span><span className="alert-count">{alerts.length} ACTIVE</span></div>
+       <div className="alerts-list">{alerts.map((alert) => <button key={alert.title} className={`alert-item alert-${alert.level.toLowerCase()} ${selectedLap === alert.lap ? "is-selected" : ""}`} onClick={() => onSelectLap(alert.lap)}><span className="alert-icon"><span /></span><span className="alert-copy"><strong>{alert.title}</strong><span>{alert.detail}</span><small>LAP {alert.lap} · {alert.time}</small></span><Icon name="chevron" size={16} /></button>)}</div>
+       <div className="alerts-footer"><span className="status-dot orange" /> Alert stream active <Icon name="chevron" size={14} /></div>
+     </section>
