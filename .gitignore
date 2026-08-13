@@ -26,3 +26,9 @@ backend/.mypy_cache/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local package/cache artifacts
+.pnpm-store/
+
+# Rejected patch files
+*.rej
