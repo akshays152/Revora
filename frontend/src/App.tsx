@@ -33,6 +33,7 @@ function App() {
     setLiveAnalysisLap(analysisLap);
 
     const telemetry = {
+      telemetry_source: "DEMO",
       lap_number: analysisLap,
       lap_time_seconds: demoLaps[selectedIndex].lapTimeSeconds,
       baseline_lap_time_seconds:
@@ -146,6 +147,7 @@ function App() {
         <div className="section-grid radio-timeline">
           <RadioPanel
             lap={selectedLap}
+            liveAnalysis={liveAnalysis}
             onAnalysis={handleRadioAnalysis}
           />
           <StateTimeline
