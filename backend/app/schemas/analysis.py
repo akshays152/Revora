@@ -44,6 +44,10 @@ class ModelMetadata(BaseModel):
 
 
 class RadioAnalysisResponse(BaseModel):
+    session_id: str
+    event_id: str
+    lap_number: int
+    timestamp: str
     transcript: str
     driver_state: DriverStateResult
     vocal_stress_score: int = Field(ge=0, le=100)

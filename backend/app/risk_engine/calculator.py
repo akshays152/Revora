@@ -70,12 +70,18 @@ class RiskEngine:
         return min(100, max(0, base_risk + stint_extra))
 
     def evaluate(self, request: RiskAssessmentRequest) -> RiskAssessmentResponse:
-        stress_risk = self._calc_driver_stress_risk(request.vocal_stress_score, request.driver_state)
+        stress_risk = self._calc_driver_stress_risk(
+            request.vocal_stress_score, request.driver_state)
         intent_risk = self._calc_intent_urgency_risk(request.intents)
-        pace_risk = self._calc_pace_degradation_risk(request.telemetry)
+        pace_risk = (
+            self._calc_pace_degradation_risk(request.telemetry)
+            if request.telemetry.telemetry_source == "LIVE"
+            else 0
+        )
 
         # Composite weighting: Driver Stress (40%), Intent Urgency (35%), Pace Degradation (25%)
-        composite_score = int(0.40 * stress_risk + 0.35 * intent_risk + 0.25 * pace_risk)
+        composite_score = int(0.40 * stress_risk + 0.35 *
+                              intent_risk + 0.25 * pace_risk)
         composite_score = min(100, max(0, composite_score))
 
         # Risk level categorization
@@ -89,7 +95,7 @@ class RiskEngine:
             level = RiskLevel.LOW
 
         # Trend calculation
-        if composite_score >= 55 or request.telemetry.lap_delta >= 1.0:
+        if composite_score >= 55 or (request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta >= 1.0):
             trend = RiskTrend.RISING
         elif composite_score < 25 and request.driver_state == DriverStateLabel.CALM:
             trend = RiskTrend.FALLING
@@ -97,14 +103,18 @@ class RiskEngine:
             trend = RiskTrend.STABLE
 
         reasons: list[str] = []
-        reasons.append(f"Vocal stress signal at {request.vocal_stress_score}% (state: {request.driver_state.value})")
-        if request.telemetry.lap_delta > 0:
-            reasons.append(f"Pace degraded by +{request.telemetry.lap_delta:.2f}s compared to baseline")
-        elif request.telemetry.lap_delta < 0:
-            reasons.append(f"Pace holding strong at {request.telemetry.lap_delta:.2f}s ahead of baseline")
-        
+        reasons.append(
+            f"Vocal stress signal at {request.vocal_stress_score}% (state: {request.driver_state.value})")
+        if request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta > 0:
+            reasons.append(
+                f"Pace degraded by +{request.telemetry.lap_delta:.2f}s compared to baseline")
+        elif request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta < 0:
+            reasons.append(
+                f"Pace holding strong at {request.telemetry.lap_delta:.2f}s ahead of baseline")
+
         for intent in request.intents:
-            reasons.append(f"Racing intent '{intent.label.value.replace('_', ' ')}' matched ({intent.evidence})")
+            reasons.append(
+                f"Racing intent '{intent.label.value.replace('_', ' ')}' matched ({intent.evidence})")
 
         return RiskAssessmentResponse(
             risk_score=composite_score,
