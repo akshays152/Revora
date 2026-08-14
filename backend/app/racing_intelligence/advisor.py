@@ -31,7 +31,7 @@ class RacingIntelligenceAdvisor:
             )
 
         intent_labels = {i.label for i in request.intents}
-        lap_delta = request.telemetry.lap_delta  # positive = slower than reference
+        lap_delta = request.telemetry.lap_delta or 0.0  # positive = slower than reference
 
         # Determine pit recommendation
         if risk.risk_level == RiskLevel.CRITICAL or (
@@ -109,6 +109,9 @@ class RacingIntelligenceAdvisor:
         reasons.append(f"AI Risk Score: {risk.risk_score}/100 ({risk.risk_level.value})")
 
         return IntelligenceResponse(
+            session_id=request.session_id or request.telemetry.session_id,
+            lap_id=request.lap_id or request.telemetry.lap_id,
+            radio_event_id=request.radio_event_id,
             summary=summary,
             recommendation=recommendation,
             reasons=reasons,

@@ -90,7 +90,10 @@ class HuggingFaceAudioPipeline:
         asr_pipeline: Callable[[Any], Any] | None = None,
         emotion_pipeline: Callable[[Any], Any] | None = None,
     ) -> None:
-        self.asr_model = os.getenv("HF_ASR_MODEL", "openai/whisper-base.en")
+        # The tiny English checkpoint is fast enough for local demos and is
+        # commonly available in the project cache. Override with HF_ASR_MODEL
+        # when a larger checkpoint is intentionally configured.
+        self.asr_model = os.getenv("HF_ASR_MODEL", "openai/whisper-tiny.en")
         self.audio_model = os.getenv("HF_AUDIO_MODEL", "superb/wav2vec2-base-superb-er")
         self.use_audio_model = (
             emotion_pipeline is not None or os.getenv("HF_ENABLE_AUDIO_MODEL", "0") == "1"

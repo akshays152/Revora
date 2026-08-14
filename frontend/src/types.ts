@@ -40,7 +40,8 @@ export interface AlertItem {
 
 export interface RadioAnalysisResult {
   session_id: string;
-  event_id: string;
+  lap_id: string;
+  radio_event_id: string;
   lap_number: number;
   timestamp: string; 
   transcript: string;
@@ -62,10 +63,17 @@ export interface RadioAnalysisResult {
     speech_to_text: string;
     vocal_state: string;
     source: string;
+    classifier_version?: string | null;
   };
 }
 
 export interface RiskAssessmentResult {
+  session_id: string | null;
+  lap_id: string | null;
+  lap_number: number | null;
+  telemetry_source: "LIVE" | "UNAVAILABLE" | "DEMO";
+  lap_delta_seconds: number | null;
+  delta_was_corrected: boolean;
   risk_score: number;
   risk_level: RiskLevel;
   trend: "STABLE" | "RISING" | "FALLING";
@@ -78,6 +86,9 @@ export interface RiskAssessmentResult {
 }
 
 export interface IntelligenceResult {
+  session_id: string | null;
+  lap_id: string | null;
+  radio_event_id: string | null;
   summary: string;
   recommendation: {
     action: string;
@@ -89,4 +100,26 @@ export interface IntelligenceResult {
   reasons: string[];
   alerts: AlertItem[];
   radio_advisory: string;
+}
+
+export interface TelemetrySnapshot {
+  session_id: string;
+  lap_id: string;
+  telemetry_source: "LIVE" | "UNAVAILABLE" | "DEMO";
+  lap_number: number;
+  lap_time_seconds: number | null;
+  baseline_lap_time_seconds: number | null;
+  lap_delta: number | null;
+  sector_deltas: number[];
+  tire_stint_age: number;
+  tire_compound: string;
+  delta_was_corrected?: boolean;
+}
+
+export interface OrchestrationResult {
+  radio_analysis: RadioAnalysisResult;
+  risk_assessment: RiskAssessmentResult;
+  racing_intelligence: IntelligenceResult;
+  telemetry: TelemetrySnapshot;
+  temporal_window_size: number;
 }

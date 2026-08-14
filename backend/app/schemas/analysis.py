@@ -55,11 +55,13 @@ class ModelMetadata(BaseModel):
     speech_to_text: str
     vocal_state: str
     source: str = "Hugging Face Hub"
+    classifier_version: str | None = None
 
 
 class RadioAnalysisResponse(BaseModel):
     session_id: str
-    event_id: str
+    lap_id: str
+    radio_event_id: str
     lap_number: int
     timestamp: str
     transcript: str

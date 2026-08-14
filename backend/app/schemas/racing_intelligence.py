@@ -29,6 +29,9 @@ class AlertItemSchema(BaseModel):
 
 
 class IntelligenceRequest(BaseModel):
+    session_id: str | None = None
+    lap_id: str | None = None
+    radio_event_id: str | None = None
     driver_state: DriverStateLabel = DriverStateLabel.STRESSED
     vocal_stress_score: int = Field(default=62, ge=0, le=100)
     intents: list[RacingIntentResult] = Field(default_factory=list)
@@ -37,6 +40,9 @@ class IntelligenceRequest(BaseModel):
 
 
 class IntelligenceResponse(BaseModel):
+    session_id: str | None = None
+    lap_id: str | None = None
+    radio_event_id: str | None = None
     summary: str
     recommendation: PitRecommendation
     reasons: list[str] = Field(default_factory=list)

@@ -49,6 +49,8 @@ class RiskEngine:
     def _calc_pace_degradation_risk(telemetry: TelemetrySnapshot) -> int:
         # positive lap_delta means driver is SLOWER than reference pace
         delta = telemetry.lap_delta
+        if delta is None or telemetry.telemetry_source == "UNAVAILABLE":
+            return 0
         if delta >= 2.0:
             base_risk = 95
         elif delta >= 1.5:
@@ -75,7 +77,7 @@ class RiskEngine:
         intent_risk = self._calc_intent_urgency_risk(request.intents)
         pace_risk = (
             self._calc_pace_degradation_risk(request.telemetry)
-            if request.telemetry.telemetry_source == "LIVE"
+            if request.telemetry.telemetry_source != "UNAVAILABLE"
             else 0
         )
 
@@ -95,7 +97,11 @@ class RiskEngine:
             level = RiskLevel.LOW
 
         # Trend calculation
-        if composite_score >= 55 or (request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta >= 1.0):
+        if composite_score >= 55 or (
+            request.telemetry.telemetry_source != "UNAVAILABLE"
+            and request.telemetry.lap_delta is not None
+            and request.telemetry.lap_delta >= 1.0
+        ):
             trend = RiskTrend.RISING
         elif composite_score < 25 and request.driver_state == DriverStateLabel.CALM:
             trend = RiskTrend.FALLING
@@ -105,10 +111,12 @@ class RiskEngine:
         reasons: list[str] = []
         reasons.append(
             f"Vocal stress signal at {request.vocal_stress_score}% (state: {request.driver_state.value})")
-        if request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta > 0:
+        if request.telemetry.telemetry_source == "UNAVAILABLE":
+            reasons.append("Live telemetry unavailable; pace degradation excluded")
+        elif request.telemetry.lap_delta is not None and request.telemetry.lap_delta > 0:
             reasons.append(
                 f"Pace degraded by +{request.telemetry.lap_delta:.2f}s compared to baseline")
-        elif request.telemetry.telemetry_source == "LIVE" and request.telemetry.lap_delta < 0:
+        elif request.telemetry.lap_delta is not None and request.telemetry.lap_delta < 0:
             reasons.append(
                 f"Pace holding strong at {request.telemetry.lap_delta:.2f}s ahead of baseline")
 
@@ -117,6 +125,12 @@ class RiskEngine:
                 f"Racing intent '{intent.label.value.replace('_', ' ')}' matched ({intent.evidence})")
 
         return RiskAssessmentResponse(
+            session_id=request.telemetry.session_id,
+            lap_id=request.telemetry.lap_id,
+            lap_number=request.telemetry.lap_number,
+            telemetry_source=request.telemetry.telemetry_source,
+            lap_delta_seconds=request.telemetry.lap_delta,
+            delta_was_corrected=request.telemetry.delta_was_corrected,
             risk_score=composite_score,
             risk_level=level,
             trend=trend,

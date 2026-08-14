@@ -20,13 +20,15 @@ export const demoLaps: LapSnapshot[] = messages.map((transcript, index) => {
   const stress = 24 + index * 5;
   const lapDelta = -0.4 + index * 0.2;
   const lapTimeSeconds = 102 + lapDelta;
+  const lapMinutes = Math.floor(lapTimeSeconds / 60);
+  const lapSeconds = (lapTimeSeconds % 60).toFixed(3).padStart(6, "0");
   const risk = Math.min(82, 12 + index * 6);
   const state = stress >= 75 ? "CRITICAL" : stress >= 50 ? "STRESSED" : stress >= 30 ? "FOCUSED" : "CALM";
   const intent = transcript.toLowerCase().includes("tyre") ? "TYRE_COMPLAINT" : transcript.toLowerCase().includes("control") ? "HANDLING_CONCERN" : "GRIP_ISSUE";
   return {
     lap,
     timestamp: `14:${String(22 + index * 2).padStart(2, "0")}:00`,
-    lapTime: `1:${lapTimeSeconds.toFixed(3).padStart(6, "0")}`,
+    lapTime: `${lapMinutes}:${lapSeconds}`,
     lapTimeSeconds,
     lapDelta,
     sectors: ["33.000", "40.500", "29.500"],

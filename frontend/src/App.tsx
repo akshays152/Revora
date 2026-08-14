@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { analyzeRadio } from "./api";
 import { AlertPanel } from "./components/AlertPanel";
 import { DemoController } from "./components/DemoController";
 import { DriverStatePanel } from "./components/DriverStatePanel";
@@ -10,13 +11,14 @@ import { RadioPanel } from "./components/RadioPanel";
 import { RiskPanel } from "./components/RiskPanel";
 import { StateTimeline } from "./components/StateTimeline";
 import { TopBar } from "./components/TopBar";
-import { demoLaps } from "./mock-data";
-import { analyzeIntelligence, evaluateRisk } from "./api";
+import { demoLaps } from "./demo-data";
 import type {
+  ExperienceMode,
+  IntelligenceResult,
   LapSnapshot,
+  OrchestrationResult,
   RadioAnalysisResult,
   RiskAssessmentResult,
-  IntelligenceResult,
 } from "./types";
 
 function App() {
@@ -26,55 +28,32 @@ function App() {
   const [riskResult, setRiskResult] = useState<RiskAssessmentResult | null>(null);
   const [intelligenceResult, setIntelligenceResult] = useState<IntelligenceResult | null>(null);
   const [liveAnalysisLap, setLiveAnalysisLap] = useState<number | null>(null);
-  const handleRadioAnalysis = async (analysis: RadioAnalysisResult) => {
-    const analysisLap = demoLaps[selectedIndex].lap;
 
+  const handleRadioAnalysis = (result: OrchestrationResult) => {
+    const analysis = result.radio_analysis;
+    setIsDemoRunning(false);
     setLiveAnalysis(analysis);
-    setLiveAnalysisLap(analysisLap);
+    setRiskResult(result.risk_assessment);
+    setIntelligenceResult(result.racing_intelligence);
+    setLiveAnalysisLap(analysis.lap_number);
+  };
 
-    const telemetry = {
-      telemetry_source: "DEMO",
-      lap_number: analysisLap,
-      lap_time_seconds: demoLaps[selectedIndex].lapTimeSeconds,
-      baseline_lap_time_seconds:
-      demoLaps[selectedIndex].lapTimeSeconds - demoLaps[selectedIndex].lapDelta,
-      lap_delta: demoLaps[selectedIndex].lapDelta,
-      sector_deltas: [0, 0, 0],
-      tire_stint_age: 18,
-      tire_compound: "SOFT",
-    };
-
-    const request = {
-      driver_state: analysis.driver_state.label,
-      vocal_stress_score: analysis.vocal_stress_score,
-      confidence: analysis.confidence,
-      intents: analysis.intents,
-      telemetry,
-    };
-
-    try {
-      const risk = await evaluateRisk(request);
-
-      const intelligence = await analyzeIntelligence({
-        ...request,
-        risk_assessment: risk,
-      });
-
-      setRiskResult(risk);
-      setIntelligenceResult(intelligence);
-    } catch (error) {
-      console.error("Racing intelligence integration failed:", error);
-    }
+  const returnToDemo = () => {
+    setLiveAnalysis(null);
+    setRiskResult(null);
+    setIntelligenceResult(null);
+    setLiveAnalysisLap(null);
+    setSelectedIndex(demoLaps.length - 1);
+    setIsDemoRunning(false);
   };
 
   const hasLiveResultForSelectedLap =
-  liveAnalysis !== null && liveAnalysisLap === demoLaps[selectedIndex].lap;
-  
+    liveAnalysis !== null && liveAnalysisLap === demoLaps[selectedIndex].lap;
+
   const selectedLap = useMemo<LapSnapshot>(() => {
     const lap = demoLaps[selectedIndex];
     if (!liveAnalysis || liveAnalysisLap !== lap.lap) return lap;
     const primaryIntent = liveAnalysis.intents[0];
-
     return {
       ...lap,
       state: liveAnalysis.driver_state.label,
@@ -85,18 +64,13 @@ function App() {
       trend: riskResult?.trend ?? liveAnalysis.driver_state.trend,
       transcript: liveAnalysis.transcript,
       intent: primaryIntent?.label ?? "PERFORMANCE_DIFFICULTY",
-      intentLabel:
-        primaryIntent?.label.replace(/_/g, " ") ?? "NO RACING CONCERN",
-      reasons:
-        intelligenceResult?.reasons ??
-        [
-          `Vocal stress signal ${liveAnalysis.vocal_stress_score}%`,
-          primaryIntent
-            ? `Racing language matched “${primaryIntent.evidence}”`
-            : "No racing-specific concern detected",
-        ],
+      intentLabel: primaryIntent?.label.replace(/_/g, " ") ?? "NO RACING CONCERN",
+      reasons: intelligenceResult?.reasons ?? [
+        `Vocal stress signal ${liveAnalysis.vocal_stress_score}%`,
+        primaryIntent ? `Racing language matched \"${primaryIntent.evidence}\"` : "No racing-specific concern detected",
+      ],
     };
-  }, [liveAnalysis, riskResult, intelligenceResult, selectedIndex]);
+  }, [liveAnalysis, riskResult, intelligenceResult, liveAnalysisLap, selectedIndex]);
 
   useEffect(() => {
     if (!isDemoRunning) return;
@@ -107,20 +81,27 @@ function App() {
   }, [isDemoRunning]);
 
   const timelineLaps = useMemo(() => demoLaps.slice(-5), []);
+  const mode: ExperienceMode = liveAnalysis ? "LIVE_RESULT" : "DEMO";
+  const telemetrySource = hasLiveResultForSelectedLap
+    ? riskResult?.telemetry_source ?? "UNAVAILABLE"
+    : "DEMO";
 
   const handleSelectLap = (lap: number) => {
-  const index = demoLaps.findIndex((item) => item.lap === lap);
-  if (index >= 0) {
-    setSelectedIndex(index);
-    setLiveAnalysis(null);
-    setRiskResult(null);
-    setIntelligenceResult(null);
-  }
-};
+    const index = demoLaps.findIndex((item) => item.lap === lap);
+    if (index >= 0) {
+      setSelectedIndex(index);
+      if (!liveAnalysis || liveAnalysisLap !== lap) {
+        setLiveAnalysis(null);
+        setRiskResult(null);
+        setIntelligenceResult(null);
+        setLiveAnalysisLap(null);
+      }
+    }
+  };
 
-    return (
+  return (
     <div className="app-shell min-h-screen">
-      <TopBar isDemoRunning={isDemoRunning} currentLap={selectedLap.lap} />
+      <TopBar mode={mode} currentLap={selectedLap.lap} eventCount={timelineLaps.length} />
 
       <main className="dashboard-shell">
         <div className="dashboard-intro">
@@ -129,69 +110,40 @@ function App() {
             <h1>The silent co-driver.</h1>
             <p>Reading the driver before the numbers tell the story.</p>
           </div>
-
-          <div className="intro-meta">
-            <span>SESSION HEALTH</span>
-            <strong>
-              <i className="status-dot cyan" /> NOMINAL
-            </strong>
-          </div>
+          <div className="intro-meta"><span>SESSION HEALTH</span><strong><i className="status-dot cyan" /> NOMINAL</strong></div>
         </div>
 
         <div className="section-grid top-panels">
           <DriverStatePanel lap={selectedLap} />
           <PerformancePanel lap={selectedLap} />
-          <RiskPanel lap={selectedLap} />
+          <RiskPanel lap={selectedLap} assessment={hasLiveResultForSelectedLap ? riskResult : null} />
         </div>
 
         <div className="section-grid radio-timeline">
-          <RadioPanel
-            lap={selectedLap}
-            liveAnalysis={liveAnalysis}
-            onAnalysis={handleRadioAnalysis}
-          />
-          <StateTimeline
-            laps={timelineLaps}
-            selectedLap={selectedLap.lap}
-            onSelectLap={handleSelectLap}
-          />
+          <RadioPanel lap={selectedLap} liveAnalysis={liveAnalysis} onAnalysis={handleRadioAnalysis} />
+          <StateTimeline laps={timelineLaps} selectedLap={selectedLap.lap} onSelectLap={handleSelectLap} />
         </div>
 
         <div className="section-grid analysis-row">
-          <PerformanceChart
-            laps={demoLaps}
-            selectedLap={selectedLap.lap}
-          />
-          <InsightPanel
-            lap={selectedLap}
-            intelligence={hasLiveResultForSelectedLap ? intelligenceResult : null}
-          />
+          <PerformanceChart laps={demoLaps} selectedLap={selectedLap.lap} telemetrySource={telemetrySource} />
+          <InsightPanel lap={selectedLap} intelligence={hasLiveResultForSelectedLap ? intelligenceResult : null} />
         </div>
 
         <div className="section-grid detail-row">
           <LapDetailPanel lap={selectedLap} />
-          <AlertPanel
-            alerts={hasLiveResultForSelectedLap ? intelligenceResult?.alerts ?? [] : []}
-            onSelectLap={handleSelectLap}
-            selectedLap={selectedLap.lap}
-          />
+          <AlertPanel alerts={hasLiveResultForSelectedLap ? intelligenceResult?.alerts ?? [] : []} onSelectLap={handleSelectLap} selectedLap={selectedLap.lap} />
         </div>
       </main>
 
       <DemoController
+        mode={mode}
         isRunning={isDemoRunning}
         currentLap={selectedLap.lap}
         firstLap={demoLaps[0].lap}
         lastLap={demoLaps[demoLaps.length - 1].lap}
-        onToggle={() => {
-          setLiveAnalysis(null);
-          setIsDemoRunning((current) => !current);
-        }}
-        onRestart={() => {
-          setLiveAnalysis(null);
-          setSelectedIndex(0);
-          setIsDemoRunning(true);
-        }}
+        onToggle={() => setIsDemoRunning((current) => !current)}
+        onRestart={() => { returnToDemo(); setIsDemoRunning(true); }}
+        onReturnToDemo={returnToDemo}
       />
     </div>
   );
